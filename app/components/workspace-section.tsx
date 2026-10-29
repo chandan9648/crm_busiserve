@@ -617,6 +617,8 @@ function RecordForm({
   const dependencyNames = useMemo(() => [...new Set(fields.flatMap((field) => field.dependsOn ? [field.dependsOn] : []))], [fields]);
   const form = useForm<Record<string, unknown>>({
     resolver: zodResolver(schema),
+    // Focus is moved by focusFirstError instead, so it follows the on-screen order of the fields.
+    shouldFocusError: false,
     defaultValues: {
       ...Object.fromEntries(fields.map((field) => [field.name, field.multiple ? [] : ""])),
       ...(method === "POST" && fields.some((field) => field.name === "workDate") ? { workDate: new Date().toISOString().slice(0, 10) } : {}),
@@ -625,6 +627,15 @@ function RecordForm({
   });
   const watchedDependencies = useWatch({ control: form.control, name: dependencyNames });
   const dependencyValues = Object.fromEntries(dependencyNames.map((name, index) => [name, String(watchedDependencies[index] ?? "")]));
+
+  /** Brings the topmost field with a problem into view and puts the cursor in it. */
+  function focusFirstError(errors: Record<string, unknown>) {
+    const first = fields.find((field) => errors[field.name]);
+    const element = first && document.getElementById(`field-${first.name}`);
+    if (!element) return;
+    element.scrollIntoView({ block: "center", behavior: "smooth" });
+    element.focus({ preventScroll: true });
+  }
 
   async function save(values: Record<string, unknown>) {
     setPending(true);
@@ -655,13 +666,13 @@ function RecordForm({
     <div className="modal-backdrop" role="presentation" data-lenis-prevent onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="modal-card" role="dialog" aria-modal="true" aria-label={title}>
         <header className="modal-header"><div><h2>{title}</h2><p>{description}</p></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><X size={17} /></button></header>
-        <form className="record-form" onSubmit={form.handleSubmit(save)}>
+        <form className="record-form" onSubmit={form.handleSubmit(save, focusFirstError)}>
           {fields.map((field) => {
             const options = field.optionsFor ? field.optionsFor(dependencyValues[field.dependsOn ?? ""] ?? "") : field.options ?? [];
             // Changing a parent field rebuilds the lists below it, so any choice that is no longer offered is cleared.
             const dependents = fields.filter((item) => item.dependsOn === field.name);
             return (
-              <div className={`form-field ${field.full ? "full" : ""}`} key={field.name}>
+              <div className={`form-field ${field.full ? "full" : ""} ${form.formState.errors[field.name] ? "invalid" : ""}`} key={field.name}>
                 <label htmlFor={`field-${field.name}`}>{field.label}{field.required ? " *" : ""}</label>
                 {field.picker
                   ? <PickerField field={field} options={options} control={form.control} />
@@ -723,6 +734,9 @@ function ReviewDialog({
     }
     if (projectKind && action === "reject" && !comments.trim()) {
       setError("Add a comment so the submitter knows why the project was not approved.");
+      const box = document.getElementById("review-comments");
+      box?.scrollIntoView({ block: "center", behavior: "smooth" });
+      box?.focus({ preventScroll: true });
       return;
     }
     setPending(true);
@@ -796,7 +810,7 @@ function ReviewDialog({
             </select>
           </>}
           <label className="field-label" htmlFor="review-comments">Comments for the submitter{projectKind && action === "reject" ? " *" : ""}</label>
-          <textarea className="textarea-input" id="review-comments" value={comments} onChange={(event) => setComments(event.target.value)} maxLength={4000} placeholder="Add context or requested changes" />
+          <textarea className={`textarea-input ${error && projectKind && action === "reject" && !comments.trim() ? "invalid" : ""}`} id="review-comments" value={comments} onChange={(event) => setComments(event.target.value)} maxLength={4000} placeholder="Add context or requested changes" />
           {error && <div className="form-error-inline" role="alert">{error}</div>}
           <div className="form-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="button" onClick={submit} disabled={pending}>{pending ? "Saving…" : "Save decision"}</button></div>
         </div>
